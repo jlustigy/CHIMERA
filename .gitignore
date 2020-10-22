@@ -2,6 +2,10 @@
 .DS_Store
 *.pyc
 
+# Keep the ABSCOEFF_CK directory and README but ignore everything else
+ABSCOEFF_CK/*
+!ABSCOEFF_CK/README.md
+
 
 # Installation
 build/
