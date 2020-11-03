@@ -2035,3 +2035,140 @@ def fx_emis(x,wlgrid,gas_scale, xsects):
 
     #binned Fp/Fstar, CK resolution Fp/Fstar, wavenumber grid, abundance profiles/TP, Fplanet, Fstar, Fstar @ Planet, Fplanet Thermal, Fplanet reflected
     return FpFstar_binned,FpFstar,wno,chemarr, Ftoa,Fstar,Fstar_TOA,Fup_therm[:,0],Fup_ref[:,0]
+
+def fx_emis_pie(x,wlgrid,gas_scale,xsects):
+    """
+    Emission spectrscopy using planetary infrared excess (PIE)
+
+    Parameters
+    ----------
+    x : list
+        See tutorials for description of list and order of list
+    wlgrid : ndarray
+        Array to regrid final specturm on (micron)
+    gas_scale : ndarray
+        array to scale mixing ratio of gases
+    xsects : list
+        cross section array from `xsecs` function
+
+    Returns
+    -------
+    FpFstar_binned,FpFstar,wno,chemarr, Ftoa,Fstar,Fstar_TOA,Fup_therm[:,0],Fup_ref[:,0]
+    """
+    #Unpacking Guillot 2010 TP profile params (3 params)
+    Tirr=x[0]
+    logKir=x[1]
+    logg1=x[2]
+    Tint=x[3]
+
+    #Unpacking Chemistry Parms
+    Met=10.**x[4]  #metallicity
+    CtoO=10.**x[5] #C/O
+    logPQC=x[6]  #carbon quench pressure
+    logPQN=x[7]  #nitrogen quench pressure
+
+    #unpacking planet params
+    Rp=x[8]  #planet radius (in jupiter)
+    Rstar=x[9]   #stellar radius (in solar)
+    M=x[10]   #planet mass (in jupiter)
+    D=x[11]
+
+    #unpacking and converting A&M cloud params
+    Kzz=10**x[12]*1E-4  #Kzz for A&M cloud
+    fsed=x[13]  #sedimentation factor for A&M cloud
+    Pbase=10.**x[14]  #cloud top pressure
+    Cld_VMR=10**x[15]  #Cloud Base Condensate Mixing ratio
+
+    #unpacking and converting simple cloud params
+    CldOpac=10**x[16]
+    RayAmp=10**x[17]
+    RaySlp=x[18]
+
+    #Setting up atmosphere grid****************************************
+    logP = np.arange(-6.8,1.5,0.1)+0.1
+    P = 10.0**logP
+    g0=6.67384E-11*M*1.898E27/(Rp*71492.*1.E3)**2
+    kv=10.**(logg1+logKir)
+    kth=10.**logKir
+
+    tp=TP(Tirr, Tint,g0 , kv, kv, kth, 0.5)
+    T = interp(logP,np.log10(tp[1]),tp[0])
+    t1=time.time()
+    Tavg=0.5*(T[1:]+T[:-1])
+    Pavg=0.5*(P[1:]+P[:-1])
+
+
+    #interpolation chem
+    logCtoO, logMet, Tarr, logParr, loggas=xsects[9:]
+
+    Ngas=loggas.shape[-2]
+    gas=np.zeros((Ngas,len(Pavg)))+1E-20
+
+    #capping T at bounds
+    TTavg=np.zeros(len(Tavg))
+    TTavg[:]=Tavg[:]
+    TTavg[TTavg>3400]=3400
+    TTavg[TTavg<500]=500
+
+    for j in range(Ngas):
+        gas_to_interp=loggas[:,:,:,j,:]
+        IF=RegularGridInterpolator((logCtoO, logMet, np.log10(Tarr),logParr),gas_to_interp,bounds_error=False)
+        for i in range(len(Pavg)):
+            gas[j,i]=10**IF(np.array([np.log10(CtoO), np.log10(Met), np.log10(TTavg[i]), np.log10(Pavg[i])]))*gas_scale[j]
+
+
+    H2Oarr, CH4arr, COarr, CO2arr, NH3arr, N2arr, HCNarr, H2Sarr,PH3arr, C2H2arr, C2H6arr, Naarr, Karr, TiOarr, VOarr, FeHarr, Harr,H2arr, Hearr,earr, Hmarr,mmw=gas
+
+    #Super simplified non-self consistent quenching based on quench pressure
+
+    #Carbon
+    PQC=10.**logPQC
+    loc=np.where(P <= PQC)
+    CH4arr[loc]=CH4arr[loc][-1]
+    COarr[loc]=COarr[loc][-1]
+    H2Oarr[loc]=H2Oarr[loc][-1]
+    CO2arr[loc]=CO2arr[loc][-1]
+
+    #Nitrogen
+    PQN=10.**logPQN
+    loc=np.where(P <= PQN)
+    NH3arr[loc]=NH3arr[loc][-1]
+    N2arr[loc]=N2arr[loc][-1]
+    t2=time.time()
+
+    #hacked rainout (but all rainout is...)....if a mixing ratio profile hits '0' (1E-12) set it to 1E-20 at all layers above that layer
+    rain_val=1E-8
+    loc=np.where(TiOarr <= rain_val)[0]
+    if len(loc>1): TiOarr[0:loc[-1]-1]=1E-20
+    #loc=np.where(VOarr <= rain_val)[0]
+    if len(loc>1):VOarr[0:loc[-1]-1]=1E-20 #VO and TiO rainout togather
+    loc=np.where(Naarr <= rain_val)[0]
+    if len(loc>1): Naarr[0:loc[-1]-1]=1E-20
+    loc=np.where(Karr <= rain_val)[0]
+    if len(loc>1):Karr[0:loc[-1]-1]=1E-20
+    loc=np.where(FeHarr <= rain_val)[0]
+    if len(loc>1):FeHarr[0:loc[-1]-1]=1E-20
+
+
+    #ackerman & Marley cloud model here
+    mmw_cond=100.39#molecular weight of condensate (in AMU)  MgSiO3=100.39
+    rho_cond=3250#density of condensate (in kg/m3)           MgSiO3=3250.
+    rr=10**(np.arange(-2,2.6,0.1))  #Droplet radii to compute on: MUST BE SAME AS MIE COEFF ARRAYS!!!!!!!!! iF YOU CHANGE THIS IT WILL BREAK
+    qc=cloud_profile(fsed,Cld_VMR, Pavg,Pbase)
+    r_sed, r_eff, r_g, f_r=particle_radius(fsed,Kzz,mmw,Tavg, Pavg,g0, rho_cond,mmw_cond,qc, rr*1E-6)
+
+    Pref=1.1#10.1  #reference pressure bar-keep fixed--need this for gravity calc in emission
+
+    #computing emission spectrum-----------
+
+    wno, Fup, Fdn,dtau,ssa, asym,wts, Fstar,Fup_therm,Fup_ref=rad(xsects, T,P,mmw, Pref,CldOpac, H2Oarr, CH4arr,COarr,CO2arr,NH3arr,Naarr,Karr,TiOarr,VOarr,C2H2arr,HCNarr,H2Sarr,FeHarr,Harr,earr,Hmarr,H2arr,Hearr,RayAmp,RaySlp,f_r, M, Rstar, Rp, D)
+    FpFstar=(Fup[:,0]/Fstar)*(Rp/Rstar*0.10279)**2  #"hi res Fp/Fstar"
+    Ftoa=Fup[:,0]
+    FpFstar_binned=instrument_emission_non_uniform(wlgrid,wno, Fup[:,0], Fstar)*(Rp/Rstar*0.10279)**2 #"binned version"
+    p3=time.time()
+
+    chemarr=np.array([P,T, H2Oarr, CH4arr,COarr,CO2arr,NH3arr,Naarr,Karr,TiOarr,VOarr,C2H2arr,HCNarr,H2Sarr,FeHarr,H2arr,Hearr,Harr,earr,Hmarr,qc,r_eff,f_r])
+    Fstar_TOA=Fstar*(Rstar*6.95E8)**2/(D*1.496E11)**2
+
+    #binned Fp/Fstar, CK resolution Fp/Fstar, wavenumber grid, abundance profiles/TP, Fplanet, Fstar, Fstar @ Planet, Fplanet Thermal, Fplanet reflected
+    return FpFstar_binned,FpFstar,wno,chemarr, Ftoa,Fstar,Fstar_TOA,Fup_therm[:,0],Fup_ref[:,0]
