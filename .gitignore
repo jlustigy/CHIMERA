@@ -14,3 +14,7 @@ dist/
 .ipynb_checkpoints/*
 __pycache__/*
 *.ipynb_checkpoints
+
+exoPIE/*.npz
+exoPIE/*/*
+exoPIE/*.png

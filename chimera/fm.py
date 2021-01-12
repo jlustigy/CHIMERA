@@ -19,7 +19,144 @@ import scipy
 import datetime
 import os
 import pysynphot as psyn
+import copy
 ### stellar spec ###
+
+def create_phoenix_database(lammin = 0.5, lammax = 15.0, stellar_grid = "phoenix_models.h5"):
+    """
+    This function scapes all of the stellar models in the phoenix database
+    and saves them to an HDF5 file for fast recall.
+
+    Parameters
+    ----------
+    lammin : float
+        Minimum wavelength [microns]
+    lammax : float
+        Maximum wavelength [microns]
+    stellar_grid : str
+        Name of output file
+
+    Returns
+    -------
+    None
+    """
+
+    # Get name of phoenix model reference table
+    filename = psyn.locations.CAT_TEMPLATE.replace("*", "phoenix")
+
+    # Open reference table
+    table = pyfits.open(filename)
+
+    # Open up a random phoenix model to hack interface
+    icat = psyn.Icat("phoenix", 5000.0, 0.0, 4.0)
+
+    # Get list of phoenix models
+    args = icat._getArgs(table[1].data.field('INDEX'), table[1].data.field('FILENAME'))
+
+    # Prepare lists
+    fluxes = []
+    temps = []
+    mets = []
+    loggs = []
+
+    # Loop over models
+    for i, arg in enumerate(args[:]):
+
+        # Attempt extractions
+        try:
+
+            # Get spectrum
+            spec = icat._getSpectrum(arg, "phoenix")
+
+            # Save coords
+            temps.append(spec[0])
+            mets.append(spec[1])
+            loggs.append(spec[2])
+
+            # If this is the first one save the wavelength range
+            if i==0:
+                wl = spec[-1].wave*1e-10*1e6 # microns
+                mwl = (wl > lammin) & (wl < lammax)
+                wl = wl[mwl]
+
+            # Save fluxes
+            fluxes.append(spec[3].flux[mwl]*1e-7*1e4*1e10)
+
+        except psyn.exceptions.ParameterOutOfBounds:
+            pass
+
+    # Convert to standard 1D arrays
+    Ts = np.sort(list(set(temps)))
+    Ms = np.sort(list(set(mets)))
+    Gs = np.sort(list(set(loggs)))
+
+    # Define big stellar grid ndarray
+    grid = np.zeros((len(Ts), len(Ms), len(Gs), len(wl))) + np.nan
+
+    # Loop over all fluxes again
+    for i in range(len(fluxes)):
+
+        # Find indexes
+        ix = np.argmin(np.fabs(Ts - temps[i]))
+        iy = np.argmin(np.fabs(Ms - mets[i]))
+        iz = np.argmin(np.fabs(Gs - loggs[i]))
+
+        # Put spectrum in big ndarray
+        grid[ix, iy, iz, :] = fluxes[i]
+
+    # Save data set as HDF5 file
+    f = h5py.File(stellar_grid,'w')
+    f.create_dataset('wl',data=wl)
+    f.create_dataset('Teff', data=Ts)
+    f.create_dataset('Met', data=Ms)
+    f.create_dataset('logg', data=Gs)
+    f.create_dataset('flux',data=grid)
+    f.close()
+
+    return
+
+def create_phoenix_interpolator(stellar_grid):
+    """
+    Produces an interpolation function for the phoenix stellar models.
+
+    Parameters
+    ----------
+    stellar_grid : str
+        Name of HDF5 file used to save phoenix grid (from :func:`create_phoenix_database`).
+
+    Returns
+    -------
+    lam : array
+        wavelength grid [microns]
+    interpolator : `scipy.interpolate.RegularGridInterpolator`
+        Instance of an interpolator
+
+    Example
+    -------
+    # Call once to create
+    lam, interpolator = create_phoenix_interpolator("phoenix_models.h5")
+    # Use to efficiently generate a stellar model
+    Fstar = interpolator([4444.0, 0.1, 3.3]).squeeze()
+
+
+    """
+    # Open file
+    f = h5py.File(stellar_grid,'r')
+
+    # Extract arrays
+    lam = np.array(f["wl"])
+    flux_grid = np.array(f["flux"])
+    Teffs = np.array(f["Teff"])
+    Mets = np.array(f["Met"])
+    loggs = np.array(f["logg"])
+
+    # Close file
+    f.close()
+
+    # Construct scipy interpolator
+    interpolator = sp.interpolate.RegularGridInterpolator((Teffs, Mets, loggs), flux_grid)
+
+    return lam, interpolator
 
 def make_stellar(temp, logMH, logg, database, outfile, write_file = True, return_spectrum = False):
     """
@@ -2036,7 +2173,7 @@ def fx_emis(x,wlgrid,gas_scale, xsects):
     #binned Fp/Fstar, CK resolution Fp/Fstar, wavenumber grid, abundance profiles/TP, Fplanet, Fstar, Fstar @ Planet, Fplanet Thermal, Fplanet reflected
     return FpFstar_binned,FpFstar,wno,chemarr, Ftoa,Fstar,Fstar_TOA,Fup_therm[:,0],Fup_ref[:,0]
 
-def fx_emis_pie(x,wlgrid,gas_scale,xsects):
+def fx_emis_pie(x,wlgrid,gas_scale,xsecs):
     """
     Emission spectrscopy using planetary infrared excess (PIE)
 
@@ -2084,12 +2221,44 @@ def fx_emis_pie(x,wlgrid,gas_scale,xsects):
     RayAmp=10**x[17]
     RaySlp=x[18]
 
+    # Unpacking stellar Parameters
+    Teff = x[19]
+    logMH = x[20]
+    logg = x[21]
+    d = x[22]
+
     #Setting up atmosphere grid****************************************
     logP = np.arange(-6.8,1.5,0.1)+0.1
     P = 10.0**logP
     g0=6.67384E-11*M*1.898E27/(Rp*71492.*1.E3)**2
     kv=10.**(logg1+logKir)
     kth=10.**logKir
+
+    # Generate new stellar spectrum
+    if not np.isfinite(xsecs[8][0]):
+        xsects = copy.deepcopy(xsecs)  # Adds ~500ms to copy here
+        wno = xsects[2]
+        stellar_db = 'phoenix'
+        # Generate new stellar spectrum
+        lambdastar, Fstar0 = make_stellar(Teff, logMH, logg, stellar_db, 'throwaway.h5', write_file=False, return_spectrum=True)
+        lambdastar=lambdastar*1E6
+        # Bin to xsect resolution
+        loc=np.where((lambdastar >= 1E4/wno[-1]) & (lambdastar <=1E4/wno[0]))
+        lambdastar=lambdastar[loc]
+        lambdastar_hi=np.arange(lambdastar.min(),lambdastar.max(),0.0001)
+        Fstar0=Fstar0[loc]
+        Fstar0=np.interp(np.log10(lambdastar_hi), np.log10(lambdastar), Fstar0)
+        szmod=len(wno)
+        Fstar_smooth=np.zeros(szmod)
+        dwno=wno[1:]-wno[:-1]
+        for i in range(szmod-1):
+            i=i+1
+            loc=np.where((1E4/lambdastar_hi >= wno[i]-0.5*dwno[i-1]) & (1E4/lambdastar_hi < wno[i]+0.5*dwno[i-1]))
+            Fstar_smooth[i]=np.mean(Fstar0[loc])
+        Fstar_smooth[0]=Fstar_smooth[1]
+        Fstar_smooth[-1]=Fstar_smooth[-2]
+        # Replace in xsect list
+        xsects[8] = Fstar_smooth
 
     tp=TP(Tirr, Tint,g0 , kv, kv, kth, 0.5)
     T = interp(logP,np.log10(tp[1]),tp[0])
@@ -2123,17 +2292,17 @@ def fx_emis_pie(x,wlgrid,gas_scale,xsects):
 
     #Carbon
     PQC=10.**logPQC
-    loc=np.where(P <= PQC)
-    CH4arr[loc]=CH4arr[loc][-1]
-    COarr[loc]=COarr[loc][-1]
-    H2Oarr[loc]=H2Oarr[loc][-1]
-    CO2arr[loc]=CO2arr[loc][-1]
+    loc=np.where(P <= PQC)[0]
+    if len(loc>1):CH4arr[loc]=CH4arr[loc][-1]
+    if len(loc>1):COarr[loc]=COarr[loc][-1]
+    if len(loc>1):H2Oarr[loc]=H2Oarr[loc][-1]
+    if len(loc>1):CO2arr[loc]=CO2arr[loc][-1]
 
     #Nitrogen
     PQN=10.**logPQN
-    loc=np.where(P <= PQN)
-    NH3arr[loc]=NH3arr[loc][-1]
-    N2arr[loc]=N2arr[loc][-1]
+    loc=np.where(P <= PQN)[0]
+    if len(loc>1):NH3arr[loc]=NH3arr[loc][-1]
+    if len(loc>1):N2arr[loc]=N2arr[loc][-1]
     t2=time.time()
 
     #hacked rainout (but all rainout is...)....if a mixing ratio profile hits '0' (1E-12) set it to 1E-20 at all layers above that layer
