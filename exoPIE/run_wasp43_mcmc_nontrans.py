@@ -58,4 +58,4 @@ if __name__ == "__main__":
     #run_mcmc("test5", processes = 3, nsteps = 200, nwalkers = 24)  # 4 parameters + 4 more stellar = 8 parameters
     #run_mcmc("test6", processes = 3, nsteps = 200, nwalkers = 27)  # 4 parameters + 4 more stellar + Rp = 9 parameters
     #run_mcmc("test7", processes = 4, nsteps = 1000, nwalkers = 30)  # 4 parameters + 4 more stellar + Rp + 4 planet atm = 13 parameters
-    run_wasp43_mcmc.run_mcmc("test9", processes = 4, nsteps = 1500, nwalkers = 30)  # 4 parameters + 4 more stellar + Rp + 4 planet atm = 13 parameters
+    run_wasp43_mcmc.run_mcmc("test9", processes = 4, nsteps = 750, nwalkers = 30)  # 4 parameters + 4 more stellar + Rp + 4 planet atm = 13 parameters
