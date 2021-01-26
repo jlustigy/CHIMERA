@@ -314,13 +314,13 @@ def run_pie_model_general(theta):
     # Sum flux components
     Fobs = Fstar_earth + Fplan_therm_earth
 
-    return Fobs, Fstar_earth, Fplan_therm_earth
+    return Fobs, Fstar_earth, Fplan_therm_earth, atm
 
 #defining log-likelihood function
 # log-likelihood
 def loglike(theta):
 
-    y_binned, y_star, y_planet = run_pie_model_general(theta)
+    y_binned, y_star, y_planet, atm = run_pie_model_general(theta)
 
     loglikelihood=-0.5*np.nansum((y_meas-y_binned)**2/y_err**2)  #your typical "quadratic" or "chi-square"
 

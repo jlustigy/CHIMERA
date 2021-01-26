@@ -178,13 +178,19 @@ def run_pie_model_general(theta):
     # Sum flux components
     Fobs = Fstar_earth + Fplan_therm_earth
 
-    return Fobs, Fstar_earth, Fplan_therm_earth
+    # Unpack and repack atm for mcmc blobs
+    P,T,H2O,CH4,CO,CO2,NH3,Na,K,TiO,VO,C2H2,HCN,H2S,FeH,H2,He,H,e, Hm,qc,r_eff,f_r=atm
+    Pavg=0.5*(P[1:]+P[:-1])
+    Tavg=0.5*(T[1:]+T[:-1])
+    atm = np.vstack([Pavg,Tavg,H2O,CH4,CO,CO2,NH3,Na,K,TiO,VO,C2H2,HCN,H2S,FeH,H2,He,H,e,Hm,qc,r_eff,f_r])
+
+    return Fobs, Fstar_earth, Fplan_therm_earth, atm
 
 #defining log-likelihood function
 # log-likelihood
 def loglike(theta):
 
-    y_binned, y_star, y_planet = run_pie_model_general(theta)
+    y_binned, y_star, y_planet, atm = run_pie_model_general(theta)
 
     loglikelihood=-0.5*np.nansum((y_meas-y_binned)**2/y_err**2)  #your typical "quadratic" or "chi-square"
 
@@ -219,6 +225,31 @@ def logprob_blobs(theta):
             pass
 
     return -np.inf, [np.nan*np.ones_like(wl), np.nan*np.ones_like(wl), np.nan*np.ones_like(wl)]
+
+def model_wrapper(x, *theta):
+    y_binned, y_star, y_planet, atm = run_pie_model_general(theta)
+    return y_binned
+
+def run_curve_fit():
+    """
+    """
+
+    print("Running curve fit...")
+
+    # Prepare bounds
+    bounds = smarter.priors.get_theta_bounds(PRIORS)
+    lowers = [b[0] for b in bounds]
+    uppers = [b[1] for b in bounds]
+    bounds = (lowers, uppers)
+
+    # Run curve fit
+    popt, pcov = sp.optimize.curve_fit(model_wrapper, wl, y_binned, sigma = y_err, p0 = THETA0,
+                                       absolute_sigma = True, bounds = bounds)
+
+    # Compute one standard deviation errors on the parameters
+    perr = np.sqrt(np.diag(pcov))
+
+    return popt, pcov
 
 def run_mcmc(tag, processes = 1, p0 = None, nsteps = 1000, nwalkers = 32,
              cache = True, overwrite = False):
@@ -348,8 +379,24 @@ if __name__ == "__main__":
 
         # MCMC Params
         ncpu = multiprocessing.cpu_count()
-        nwalkers = 10*len(run_wasp43_mcmc.THETA0)
+        nwalkers = 2*ncpu
         nsteps = 5000
+        ndim = len(THETA0)
+
+        # Run initial optimization
+        popt, pcov = run_curve_fit()
+
+        # Get one sigma posterior uncertainties
+        perr = np.sqrt(np.diag(pcov))
+
+        # Construct initial walker states using initial posterior estimates
+        while len(p0) < nwalkers:
+            pi = np.random.standard_normal(size=ndim) * perr + popt
+            lp = smarter.priors.get_lnprior(pi, PRIORS)
+            # Make sure that the state is within bounds
+            if np.isfinite(lp):
+                p0.append(pi)
+        p0 = np.array(p0)
 
         # Run MCMC (v2.0 data)
-        run_mcmc("test_free1", processes = ncpu, nsteps = nsteps, nwalkers = nwalkers)  # 4 parameters + 4 more stellar + Rp + 5 planet atm = 14 parameters
+        run_mcmc("test_free2", processes = ncpu, p0 = p0, nsteps = nsteps)  # 4 parameters + 4 more stellar + Rp + 5 planet atm = 14 parameters
