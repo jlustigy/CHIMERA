@@ -18,3 +18,4 @@ __pycache__/*
 exoPIE/*.npz
 exoPIE/*/*
 exoPIE/*.png
+exoPIE/*.log

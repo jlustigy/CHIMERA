@@ -390,6 +390,7 @@ if __name__ == "__main__":
         perr = np.sqrt(np.diag(pcov))
 
         # Construct initial walker states using initial posterior estimates
+        p0 = []
         while len(p0) < nwalkers:
             pi = np.random.standard_normal(size=ndim) * perr + popt
             lp = smarter.priors.get_lnprior(pi, PRIORS)
