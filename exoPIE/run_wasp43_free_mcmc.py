@@ -378,10 +378,10 @@ if __name__ == "__main__":
     else:
 
         # MCMC Params
-        ncpu = multiprocessing.cpu_count()
-        nwalkers = 2*ncpu
-        nsteps = 5000
         ndim = len(THETA0)
+        ncpu = 2#multiprocessing.cpu_count()
+        nwalkers = 10*ndim#2*ncpu
+        nsteps = 50
 
         # Run initial optimization
         popt, pcov = run_curve_fit()
@@ -390,6 +390,7 @@ if __name__ == "__main__":
         perr = np.sqrt(np.diag(pcov))
 
         # Construct initial walker states using initial posterior estimates
+        """
         p0 = []
         while len(p0) < nwalkers:
             pi = np.random.standard_normal(size=ndim) * perr + popt
@@ -398,6 +399,27 @@ if __name__ == "__main__":
             if np.isfinite(lp):
                 p0.append(pi)
         p0 = np.array(p0)
+        """
+
+        # Construct initial walker states using initial posterior estimates
+        # Make gaussian ball
+        gball = []
+        # Loop over parameters
+        for i in range(len(THETA_NAMES)):
+            if hasattr(PRIORS[i], "sigma"):
+                # If the prior is more constraining than the likelihood
+                if PRIORS[i].sigma < perr[i]:
+                    # Use the prior
+                    gball.append(PRIORS[i])
+                else:
+                    # Use the gaussian posterior
+                    gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
+            else:
+                # Use the gaussian posterior
+                gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
+
+        # Get random samples from each of your parameters to initialize the walkers
+        p0 = np.vstack([dim.random_sample(nwalkers) for dim in gball]).T
 
         # Run MCMC (v2.0 data)
         run_mcmc("test_free2", processes = ncpu, p0 = p0, nsteps = nsteps)  # 4 parameters + 4 more stellar + Rp + 5 planet atm = 14 parameters

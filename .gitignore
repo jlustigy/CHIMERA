@@ -19,3 +19,4 @@ exoPIE/*.npz
 exoPIE/*/*
 exoPIE/*.png
 exoPIE/*.log
+exoPIE/*.pkl
