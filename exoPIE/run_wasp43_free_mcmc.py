@@ -379,9 +379,9 @@ if __name__ == "__main__":
 
         # MCMC Params
         ndim = len(THETA0)
-        ncpu = 2#multiprocessing.cpu_count()
+        ncpu = multiprocessing.cpu_count()
         nwalkers = 10*ndim#2*ncpu
-        nsteps = 50
+        nsteps = 5000
 
         # Run initial optimization
         popt, pcov = run_curve_fit()
