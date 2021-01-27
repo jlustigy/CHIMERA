@@ -9,6 +9,7 @@ import astropy.units as u
 import pickle
 import multiprocessing
 import emcee, corner
+import dill
 
 import chimera
 import pysynphot
@@ -378,6 +379,7 @@ if __name__ == "__main__":
     else:
 
         # MCMC Params
+        tag = "test_free2"
         ndim = len(THETA0)
         ncpu = multiprocessing.cpu_count()
         nwalkers = 10*ndim#2*ncpu
@@ -421,5 +423,9 @@ if __name__ == "__main__":
         # Get random samples from each of your parameters to initialize the walkers
         p0 = np.vstack([dim.random_sample(nwalkers) for dim in gball]).T
 
+        # Save initial optimization results
+        with open(tag+"_optim.pkl", 'wb') as file:
+            dill.dump((popt, pcov, perr, p0), file)
+
         # Run MCMC (v2.0 data)
-        run_mcmc("test_free2", processes = ncpu, p0 = p0, nsteps = nsteps)  # 4 parameters + 4 more stellar + Rp + 5 planet atm = 14 parameters
+        run_mcmc(tag, processes = ncpu, p0 = p0, nsteps = nsteps)  # 4 parameters + 4 more stellar + Rp + 5 planet atm = 14 parameters
