@@ -408,9 +408,14 @@ if __name__ == "__main__":
         gball = []
         # Loop over parameters
         for i in range(len(THETA_NAMES)):
-            if hasattr(PRIORS[i], "sigma"):
-                # If the prior is more constraining than the likelihood and it's not zero
-                if (PRIORS[i].sigma < perr[i]) and (perr[i] > 1e-15):
+            # if the initial likelihood is a delta function
+            if (perr[i] < 1e-15):
+                # Use the prior
+                gball.append(PRIORS[i])
+            # if the prior is a gaussian
+            elif hasattr(PRIORS[i], "sigma"):
+                # If the prior is more constraining than the likelihood
+                if (PRIORS[i].sigma < perr[i]):
                     # Use the prior
                     gball.append(PRIORS[i])
                 else:
