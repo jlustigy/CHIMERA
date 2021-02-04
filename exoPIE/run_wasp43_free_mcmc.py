@@ -22,8 +22,6 @@ from smarter.utils import nsig_intervals
 from run_wasp43_mcmc import *
 
 HERE = os.path.abspath(os.path.split(__file__)[0])
-sys.path.insert(1, os.path.join(HERE, "../../hbar/scripts/"))
-from submit_python_script import write_qsub_python_script
 
 class Gas(object):
     """
@@ -96,6 +94,13 @@ THETA_DEFAULTS = {
     "logg" : 4.646,
     "d" : 86.7467#80.0
 }
+
+# Append "True" values to default dict
+THETA_DEFAULTS["H2O"] = -3.0
+THETA_DEFAULTS["CH4"] = -8.0
+THETA_DEFAULTS["CO"] = -7.0
+THETA_DEFAULTS["CO2"] = -8.0
+THETA_DEFAULTS["NH3"] = -10.0
 
 GAS_LIST = [
     "H2O", "CH4", "CO", "CO2", "NH3", "N2", "HCN", "H2S", "PH3",
@@ -227,6 +232,101 @@ def logprob_blobs(theta):
 
     return -np.inf, [np.nan*np.ones_like(wl), np.nan*np.ones_like(wl), np.nan*np.ones_like(wl)]
 
+"""
+MAKE FAKE DATA
+"""
+
+def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_free_data", seed=42):
+    """
+    """
+
+    # Load Kevin's SNR files
+    x, snr = load_kevins_errors(niriss = niriss, nirspec = nirspec)
+
+    # Given a datafile, bin to CHIMERA's R=100 grid (This feels DUMB!)
+    wnomin = np.floor(np.min(1e4 / x))
+    wnomax = np.ceil(np.max(1e4 / x))
+
+    # Prep CHIMERA inputs
+    global XSECS
+    observatory='JWST'
+    directory = os.path.join(os.getcwd(), '..','ABSCOEFF_CK')
+    XSECS=chimera.xsects(wnomin, wnomax, observatory, directory,stellar_file=None)
+    XSECS=list(XSECS)  # This appears necessary to set the stellar flux *within* fx
+
+    # Chimera Grids
+    wno = XSECS[2]
+    wl = 1e4 / wno
+
+    # Derive bin widths
+    dwl = wl[:-1] - wl[1:]        # Bin spacing
+    mwl = 0.5*(wl[:-1] + wl[1:])  # Bin centers
+    dwl = sp.interpolate.interp1d(mwl, dwl, fill_value="extrapolate")(wl)
+
+    # Run model with default inputs
+    Fobs, Fstar_earth, Fplan_therm_earth, atm = run_pie_model_general(THETA0)
+
+    # Rebin data to CHIMERA grid
+    y_meas_binned, y_err_binned = cg.downbin_spec_err(np.ones_like(snr), 1.0/snr, x, wl[::-1], dlam=dwl[::-1])
+
+    # Final binned model and error
+    y_binned = Fobs
+    y_err = Fobs * y_err_binned[::-1]
+
+    # Calculate Gaussian noise
+    np.random.seed(seed=seed)   # User seed
+    gaus = np.random.randn(len(wl))
+    np.random.seed(None)   # User seed
+
+    # Add gaussian noise to observed data
+    y_meas = Fobs + y_err * gaus
+
+    # Save datafile
+    #"""
+    np.savez(savetag+".npz",
+             wl=wl, y_binned=y_binned,
+             y_meas=y_meas, y_err=y_err,
+             xsecs=XSECS)
+    #"""
+
+    # Plot
+    fig, axes = plt.subplots(2,1, figsize = (14, 10))
+    ax= axes[0]
+    ax2 = axes[1]
+
+    ax.set_xlim(wl.min(), wl.max())
+    ax2.set_xlim(wl.min(), wl.max())
+    ax2.set_xlabel("Wavelength [$\mu$m]")
+    ax.set_ylabel("Observed Flux [W/m$^2$/m]")
+
+    ax.plot(wl, y_binned, label = "Star + Planet", color = "C0")
+    #ax.plot(wl, y_planet, label = "Planet thermal", color = "C3")
+    ax.errorbar(wl, y_meas, yerr=y_err, fmt = ".k", label = "1 hr observations \n(NIRISS + NIRSpec G395)")
+    ax.plot(wl, Fstar_earth + 1000*Fplan_therm_earth, label = "Star + 1000x Planet thermal", color = "C1")
+    #ax.plot(wave2, y_planet2, color = "C3", label = "Planet Model")
+
+    ax.set_yscale("log")
+    ax.legend(fontsize = 16, loc = "lower left")
+
+    ax.axvspan(wl.min(), 1.6, color="C2", alpha = 0.1)
+    ax.text(1.2, 1.3e-7, "Reference\nWavelength\nRange", ha = "center", va = "top")
+
+    ax.text(4.0, 2e-7, "Planetary\nInfrared\nExcess", ha = "center", va = "center")
+    ax.annotate("", xy=(4.0, 2e-8), xytext=(4.0, 1e-7), arrowprops=dict(arrowstyle="->"))
+
+    ax2.set_ylabel("Planet/Star Flux $(F_p/F_s)$ [ppm]")
+    ax2.plot(wl, 1e6*(y_binned/Fstar_earth-1.0), color = "w", lw = 4.0, zorder = 100)
+    ax2.plot(wl, 1e6*(y_binned/Fstar_earth-1.0), color = "C3", label = "Planet-to-Star Flux ($F_{pl}/F_{star}$)", zorder = 100)
+    ylim = ax2.get_ylim()
+    ax2.errorbar(wl, 1e6*(y_meas/Fstar_earth-1.0), yerr = 1e6*(y_err/Fstar_earth), fmt=".k", label = "Data/Stellar Model ($F_{obs} / F_{star} - 1$)")
+    ax2.set_ylim(ylim[0], ylim[1])
+    ax2.legend(fontsize = 16)
+    #ax2.set_yscale("log")
+
+    fig.savefig(savetag+".png", bbox_inches = "tight")
+
+    return wl, y_binned, y_meas, y_err, XSECS
+
 def model_wrapper(x, *theta):
     y_binned, y_star, y_planet, atm = run_pie_model_general(theta)
     return y_binned
@@ -249,6 +349,9 @@ def run_curve_fit():
 
     # Compute one standard deviation errors on the parameters
     perr = np.sqrt(np.diag(pcov))
+
+    for i in range(len(THETA_NAMES)):
+        print("%s = %.2e ± %.2e" %(THETA_NAMES[i], popt[i], perr[i]))
 
     return popt, pcov
 
@@ -372,13 +475,6 @@ def run_mcmc(tag, processes = 1, p0 = None, nsteps = 1000, nwalkers = 32,
 PARAMETERS & PRIORS
 """
 
-# Append "True" values to default dict
-THETA_DEFAULTS["H2O"] = -4.0
-THETA_DEFAULTS["CH4"] = -10.0
-THETA_DEFAULTS["CO"] = -4.0
-THETA_DEFAULTS["CO2"] = -10.0
-THETA_DEFAULTS["NH3"] = -10.0
-
 # Define Priors
 PRIORS = [
     smarter.priors.GaussianPrior(THETA_DEFAULTS["Teff"], 174.75, theta_name = "Teff", theta0 = THETA_DEFAULTS["Teff"]),
@@ -407,28 +503,42 @@ THETA_NAMES = [prior.theta_name for prior in PRIORS]
 # Get Truth values
 THETA0 = [prior.theta0 for prior in PRIORS]
 
+"""
+DATA
+"""
+
+# Define data and xsecs
+data_tag = "w43b_exopie_free_data"
+if os.path.exists(data_tag+".npz"):
+    print("Loading Synthetic Data and xsecs...")
+    data = np.load(data_tag+".npz", allow_pickle=True)
+    wl=data["wl"]
+    y_binned=data["y_binned"]
+    y_meas=data["y_meas"]
+    y_err=data["y_err"]
+    XSECS=data["xsecs"]
+else:
+    # Make fake dataset
+    print("Generating Synthetic Data and xsecs...")
+    wl, y_binned, y_meas, y_err, XSECS = generate_data(savetag = data_tag)
+
+use_random_noise = False
+if use_random_noise:
+    pass
+else:
+    y_meas = y_binned
+
 if __name__ == "__main__":
 
-    import platform
+    # MCMC Params
+    tag = "test_free3_data"
+    ndim = len(THETA0)
+    ncpu = 24#multiprocessing.cpu_count()
+    nwalkers = 10*ndim#2*ncpu
+    nsteps = 5000
 
-    if platform.node().startswith("cartman"):
-        # On the login node: submit job
-        write_qsub_python_script(__file__,
-                                 name = "exoPIE",
-                                 submit = True,
-                                 rm_after_submit = True)
+    # Run OE retrieval to initialize MCMC walker near posterior well
+    popt, pcov, perr, p0 = perform_initial_optimization(tag, nwalkers)
 
-    else:
-
-        # MCMC Params
-        tag = "test_free2"
-        ndim = len(THETA0)
-        ncpu = multiprocessing.cpu_count()
-        nwalkers = 10*ndim#2*ncpu
-        nsteps = 5000
-
-        # Run OE retrieval to initialize MCMC walker near posterior well
-        popt, pcov, perr, p0 = exopie.perform_initial_optimization(tag, nwalkers)
-
-        # Run MCMC (v2.0 data)
-        run_mcmc(tag, processes = ncpu, p0 = p0, nsteps = nsteps)  # 4 parameters + 4 more stellar + Rp + 5 planet atm = 14 parameters
+    # Run MCMC (v2.0 data)
+    run_mcmc(tag, processes = ncpu, p0 = p0, nsteps = nsteps)  # 4 parameters + 4 more stellar + Rp + 5 planet atm = 14 parameters

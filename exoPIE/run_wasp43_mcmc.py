@@ -412,7 +412,7 @@ def load_kevins_errors(niriss = True, nirspec = True):
 
     return wave2, snr2
 
-def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_data"):
+def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_data", seed=42):
     """
     """
 
@@ -450,7 +450,7 @@ def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_data"):
     y_err = Fobs * y_err_binned[::-1]
 
     # Calculate Gaussian noise
-    np.random.seed(42)   # User seed
+    np.random.seed(seed=seed)   # User seed
     gaus = np.random.randn(len(wl))
     np.random.seed(None)   # User seed
 
