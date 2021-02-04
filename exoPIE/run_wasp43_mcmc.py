@@ -369,7 +369,7 @@ def load_kevins_errors(niriss = True, nirspec = True):
     """
 
     # Get NIRISS Data
-    handle  = open(os.path.join(HERE, 'jwst_inputs/niriss_soss-W43-R100.p'), 'rb')
+    handle  = open(os.path.join(HERE, 'jwst_inputs/niriss_soss-W43-r100.p'), 'rb')
     model   = pickle.load(handle)
     obstime = model['RawData']['electrons_out'][0]/model['RawData']['e_rate_out'][0]/3600
     #print(obstime)
