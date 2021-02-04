@@ -20,3 +20,4 @@ exoPIE/*/*
 exoPIE/*.png
 exoPIE/*.log
 exoPIE/*.pkl
+!exopie/jwst_inputs/*.p

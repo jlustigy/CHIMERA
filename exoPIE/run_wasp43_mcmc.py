@@ -9,6 +9,7 @@ import astropy.units as u
 import pickle
 import multiprocessing
 import emcee, corner
+import dill
 
 import chimera
 import pysynphot
@@ -18,6 +19,8 @@ import smart
 import smarter; smarter.utils.plot_setup()
 
 from smarter.utils import nsig_intervals
+
+HERE = os.path.abspath(os.path.split(__file__)[0])
 
 def plot_mcmc_trace(tag, labels = None, iteration = None, plt_path = "", bins = 20,
                     iburn0 = 0, accept_quantiles = [0.1, 0.5, 0.9],
@@ -360,10 +363,13 @@ def logprob_blobs(theta):
 MAKE FAKE DATA
 """
 
-def load_kevins_errors():
+def load_kevins_errors(niriss = True, nirspec = True):
+    """
+    Load some PandExo outputs for WASP-43b using Kevin's files.
+    """
 
     # Get NIRISS Data
-    handle  = open('/Users/lustija1/Desktop/WASP43-ExoPIE/WASP43/niriss_soss-W43-R100.p', 'rb')
+    handle  = open(os.path.join(HERE, 'jwst_inputs/niriss_soss-W43-R100.p'), 'rb')
     model   = pickle.load(handle)
     obstime = model['RawData']['electrons_out'][0]/model['RawData']['e_rate_out'][0]/3600
     #print(obstime)
@@ -375,7 +381,7 @@ def load_kevins_errors():
     #print(wave.min(), wave.max())
 
     # Get NIRSpec Data
-    handle  = open('/Users/lustija1/Desktop/WASP43-ExoPIE/WASP43/nirspec_g395h-W43-r100.p', 'rb')
+    handle  = open(os.path.join(HERE, 'jwst_inputs/nirspec_g395h-W43-r100.p'), 'rb')
     #handle  = open('niriss_soss-W43.p', 'rb')
     model_g395  = pickle.load(handle)
     #print(model['RawData']['electrons_out'][0]/model['RawData']['e_rate_out'][0]/3600)
@@ -387,9 +393,18 @@ def load_kevins_errors():
     snr_g395 = 1./error_g395
     #print(wave_g395.min(), wave_g395.max())
 
-    # Conbine datas
-    wave2   = np.concatenate((wave, wave_g395))
-    snr2    = np.concatenate(( snr,  snr_g395))
+    if niriss and nirspec:
+        # Conbine datas
+        wave2   = np.concatenate((wave, wave_g395))
+        snr2    = np.concatenate(( snr,  snr_g395))
+    elif niriss:
+        wave2 = wave
+        snr2 = snr
+    elif nirspec:
+        wave2 = wave_g395
+        snr2 = snr_g395
+    else:
+        print("Error: Must use one of the instruments")
 
     m = snr2 > 100
     wave2 = wave2[m]
@@ -397,12 +412,12 @@ def load_kevins_errors():
 
     return wave2, snr2
 
-def generate_data():
+def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_data"):
     """
     """
 
     # Load Kevin's SNR files
-    x, snr = load_kevins_errors()
+    x, snr = load_kevins_errors(niriss = niriss, nirspec = nirspec)
 
     # Given a datafile, bin to CHIMERA's R=100 grid (This feels DUMB!)
     wnomin = np.floor(np.min(1e4 / x))
@@ -425,7 +440,7 @@ def generate_data():
     dwl = sp.interpolate.interp1d(mwl, dwl, fill_value="extrapolate")(wl)
 
     # Run model with default inputs
-    Fobs, Fstar_earth, Fplan_therm_earth = run_pie_model_general([])
+    Fobs, Fstar_earth, Fplan_therm_earth, atm = run_pie_model_general([])
 
     # Rebin data to CHIMERA grid
     y_meas_binned, y_err_binned = cg.downbin_spec_err(np.ones_like(snr), 1.0/snr, x, wl[::-1], dlam=dwl[::-1])
@@ -444,7 +459,7 @@ def generate_data():
 
     # Save datafile
     #"""
-    np.savez("w43b_exopie_data.npz",
+    np.savez(savetag+".npz",
              wl=wl, y_binned=y_binned,
              y_meas=y_meas, y_err=y_err,
              xsecs=XSECS)
@@ -484,9 +499,86 @@ def generate_data():
     ax2.legend(fontsize = 16)
     #ax2.set_yscale("log")
 
-    fig.savefig("W43b_PIE_FpFs_binned.png", bbox_inches = "tight")
+    fig.savefig(savetag+".png", bbox_inches = "tight")
 
     return wl, y_binned, y_meas, y_err, XSECS
+
+def model_wrapper(x, *theta):
+    y_binned, y_star, y_planet, atm = run_pie_model_general(theta)
+    return y_binned
+
+def run_curve_fit(diff_length_scale = 0.1):
+    """
+    """
+
+    print("Running curve fit...")
+
+    # Prepare bounds
+    bounds = smarter.priors.get_theta_bounds(PRIORS)
+    lowers = [b[0] for b in bounds]
+    uppers = [b[1] for b in bounds]
+    bounds = (lowers, uppers)
+
+    # Prepare step size for finite difference Jacobians
+    bs = np.array(bounds)
+    # Spacing between bounds
+    delta = (bs[1:,:] - bs[:-1,:])
+    # Use 1/10th of parameter length scale
+    diff_step = diff_length_scale * delta.squeeze()
+
+    # Run curve fit
+    popt, pcov = sp.optimize.curve_fit(model_wrapper, wl, y_binned, sigma = y_err, p0 = THETA0,
+                                       absolute_sigma = True, bounds = bounds, diff_step = diff_step)
+
+    # Compute one standard deviation errors on the parameters
+    perr = np.sqrt(np.diag(pcov))
+
+    for i in range(len(THETA_NAMES)):
+        print("%s = %.2e ± %.2e" %(THETA_NAMES[i], popt[i], perr[i]))
+
+    return popt, pcov
+
+def perform_initial_optimization(tag, nwalkers):
+    """
+    """
+
+    # Run initial optimization
+    popt, pcov = run_curve_fit()
+
+    # Get one sigma posterior uncertainties
+    perr = np.sqrt(np.diag(pcov))
+
+    # Construct initial walker states using initial posterior estimates
+    # Make gaussian ball
+    gball = []
+    # Loop over parameters
+    for i in range(len(THETA_NAMES)):
+        bnds = PRIORS[i].get_bounds()
+        # if the initial likelihood is a delta function or larger than the bounds
+        if (perr[i] < 1e-15) or (perr[i] > (bnds[1] - bnds[0])):
+            # Use the prior
+            gball.append(PRIORS[i])
+        # if the prior is a gaussian
+        elif hasattr(PRIORS[i], "sigma"):
+            # If the prior is more constraining than the likelihood
+            if (PRIORS[i].sigma < perr[i]):
+                # Use the prior
+                gball.append(PRIORS[i])
+            else:
+                # Use the gaussian posterior
+                gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
+        else:
+            # Use the gaussian posterior
+            gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
+
+    # Get random samples from each of your parameters to initialize the walkers
+    p0 = np.vstack([dim.random_sample(nwalkers) for dim in gball]).T
+
+    # Save initial optimization results
+    with open(tag+"_optim.pkl", 'wb') as file:
+        dill.dump((popt, pcov, perr, p0), file)
+
+    return popt, pcov, perr, p0
 
 def run_mcmc(tag, processes = 1, p0 = None, nsteps = 1000, nwalkers = 32,
              cache = True, overwrite = False):
@@ -567,10 +659,10 @@ GLOBALS
 """
 
 # Define data and xsecs
-data_tag = "w43b_exopie_data.npz"
-if os.path.exists(data_tag):
+data_tag = "w43b_exopie_data"
+if os.path.exists(data_tag+".npz"):
     print("Loading Synthetic Data and xsecs...")
-    data = np.load(data_tag, allow_pickle=True)
+    data = np.load(data_tag+".npz", allow_pickle=True)
     wl=data["wl"]
     y_binned=data["y_binned"]
     y_meas=data["y_meas"]
@@ -579,7 +671,7 @@ if os.path.exists(data_tag):
 else:
     # Make fake dataset
     print("Generating Synthetic Data and xsecs...")
-    wl, y_binned, y_meas, y_err, XSECS = generate_data()
+    wl, y_binned, y_meas, y_err, XSECS = generate_data(savetag = data_tag)
 
 use_random_noise = False
 if use_random_noise:

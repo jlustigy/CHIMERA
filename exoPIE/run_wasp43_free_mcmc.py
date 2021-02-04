@@ -252,6 +252,48 @@ def run_curve_fit():
 
     return popt, pcov
 
+def perform_initial_optimization(tag, nwalkers):
+    """
+    """
+
+    # Run initial optimization
+    popt, pcov = run_curve_fit()
+
+    # Get one sigma posterior uncertainties
+    perr = np.sqrt(np.diag(pcov))
+
+    # Construct initial walker states using initial posterior estimates
+    # Make gaussian ball
+    gball = []
+    # Loop over parameters
+    for i in range(len(THETA_NAMES)):
+        bnds = PRIORS[i].get_bounds()
+        # if the initial likelihood is a delta function or larger than the bounds
+        if (perr[i] < 1e-15) or (perr[i] > (bnds[1] - bnds[0])):
+            # Use the prior
+            gball.append(PRIORS[i])
+        # if the prior is a gaussian
+        elif hasattr(PRIORS[i], "sigma"):
+            # If the prior is more constraining than the likelihood
+            if (PRIORS[i].sigma < perr[i]):
+                # Use the prior
+                gball.append(PRIORS[i])
+            else:
+                # Use the gaussian posterior
+                gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
+        else:
+            # Use the gaussian posterior
+            gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
+
+    # Get random samples from each of your parameters to initialize the walkers
+    p0 = np.vstack([dim.random_sample(nwalkers) for dim in gball]).T
+
+    # Save initial optimization results
+    with open(tag+"_optim.pkl", 'wb') as file:
+        dill.dump((popt, pcov, perr, p0), file)
+
+    return popt, pcov, perr, p0
+
 def run_mcmc(tag, processes = 1, p0 = None, nsteps = 1000, nwalkers = 32,
              cache = True, overwrite = False):
 
@@ -385,52 +427,8 @@ if __name__ == "__main__":
         nwalkers = 10*ndim#2*ncpu
         nsteps = 5000
 
-        # Run initial optimization
-        popt, pcov = run_curve_fit()
-
-        # Get one sigma posterior uncertainties
-        perr = np.sqrt(np.diag(pcov))
-
-        # Construct initial walker states using initial posterior estimates
-        """
-        p0 = []
-        while len(p0) < nwalkers:
-            pi = np.random.standard_normal(size=ndim) * perr + popt
-            lp = smarter.priors.get_lnprior(pi, PRIORS)
-            # Make sure that the state is within bounds
-            if np.isfinite(lp):
-                p0.append(pi)
-        p0 = np.array(p0)
-        """
-
-        # Construct initial walker states using initial posterior estimates
-        # Make gaussian ball
-        gball = []
-        # Loop over parameters
-        for i in range(len(THETA_NAMES)):
-            # if the initial likelihood is a delta function
-            if (perr[i] < 1e-15):
-                # Use the prior
-                gball.append(PRIORS[i])
-            # if the prior is a gaussian
-            elif hasattr(PRIORS[i], "sigma"):
-                # If the prior is more constraining than the likelihood
-                if (PRIORS[i].sigma < perr[i]):
-                    # Use the prior
-                    gball.append(PRIORS[i])
-                else:
-                    # Use the gaussian posterior
-                    gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
-            else:
-                # Use the gaussian posterior
-                gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
-
-        # Get random samples from each of your parameters to initialize the walkers
-        p0 = np.vstack([dim.random_sample(nwalkers) for dim in gball]).T
-
-        # Save initial optimization results
-        with open(tag+"_optim.pkl", 'wb') as file:
-            dill.dump((popt, pcov, perr, p0), file)
+        # Run OE retrieval to initialize MCMC walker near posterior well
+        popt, pcov, perr, p0 = exopie.perform_initial_optimization(tag, nwalkers)
 
         # Run MCMC (v2.0 data)
         run_mcmc(tag, processes = ncpu, p0 = p0, nsteps = nsteps)  # 4 parameters + 4 more stellar + Rp + 5 planet atm = 14 parameters
