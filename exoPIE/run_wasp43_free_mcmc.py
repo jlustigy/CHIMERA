@@ -389,7 +389,17 @@ def perform_initial_optimization(tag, nwalkers):
             gball.append(smarter.priors.GaussianPrior(popt[i], perr[i], theta_name = THETA_NAMES[i], theta0=THETA0[i]))
 
     # Get random samples from each of your parameters to initialize the walkers
-    p0 = np.vstack([dim.random_sample(nwalkers) for dim in gball]).T
+    p0 = []
+    # Loop until we have enough valid walker starting states
+    while len(p0) < nwalkers:
+        # Draw a random state vector
+        theta_tmp = [dim.random_sample() for dim in gball]
+        # If the state vector returns a finite log-prior probability
+        if np.isfinite(smarter.priors.get_lnprior(theta_tmp, PRIORS)):
+            # Add it as an initial walker state
+            p0.append(theta_tmp)
+    # Convert to np array
+    p0 = np.array(p0)
 
     # Save initial optimization results
     with open(tag+"_optim.pkl", 'wb') as file:
