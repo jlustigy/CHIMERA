@@ -55,7 +55,7 @@ exopie.XSECS = XSECS
 
 if __name__ == "__main__":
 
-    tag = "test_nirspec1"
+    tag = "test_mirilrs1"
     nsteps = 5000
     ncpu = multiprocessing.cpu_count()
     nwalkers = 10*len(exopie.THETA0)
