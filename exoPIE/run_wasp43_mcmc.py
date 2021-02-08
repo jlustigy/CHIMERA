@@ -363,7 +363,7 @@ def logprob_blobs(theta):
 MAKE FAKE DATA
 """
 
-def load_kevins_errors(niriss = True, nirspec = True):
+def load_kevins_errors(niriss = True, nirspec = True, mirilrs = False):
     """
     Load some PandExo outputs for WASP-43b using Kevin's files.
     """
@@ -393,6 +393,19 @@ def load_kevins_errors(niriss = True, nirspec = True):
     snr_g395 = 1./error_g395
     #print(wave_g395.min(), wave_g395.max())
 
+    # Get NIRSpec Data
+    handle  = open(os.path.join(HERE, 'jwst_inputs/miri_lrs-W43-r100.p'), 'rb')
+    #handle  = open('niriss_soss-W43.p', 'rb')
+    model_lrs  = pickle.load(handle)
+    wave_lrs = model_lrs['FinalSpectrum']['wave']
+    spectrum_lrs = model_lrs['FinalSpectrum']['spectrum']
+    error_lrs = model_lrs['FinalSpectrum']['error_w_floor']
+    randspec_lrs = model_lrs['FinalSpectrum']['spectrum_w_rand']
+    #snr_g395 = model_g395['RawData']['electrons_out']/np.sqrt(model_g395['RawData']['var_out'])
+    snr_lrs = 1./error_lrs
+    #print(wave_g395.min(), wave_g395.max())
+
+    """
     if niriss and nirspec:
         # Conbine datas
         wave2   = np.concatenate((wave, wave_g395))
@@ -405,6 +418,22 @@ def load_kevins_errors(niriss = True, nirspec = True):
         snr2 = snr_g395
     else:
         print("Error: Must use one of the instruments")
+    """
+
+    wave2 = []
+    snr2 = []
+    if niriss:
+        # Conbine data
+        wave2   = np.concatenate((wave2, wave))
+        snr2    = np.concatenate((snr2, snr))
+    if nirspec:
+        # Conbine data
+        wave2   = np.concatenate((wave2, wave_g395))
+        snr2    = np.concatenate((snr2, snr_g395))
+    if mirilrs:
+        # Conbine data
+        wave2   = np.concatenate((wave2, wave_lrs))
+        snr2    = np.concatenate((snr2, snr_lrs))
 
     m = snr2 > 100
     wave2 = wave2[m]
@@ -412,12 +441,12 @@ def load_kevins_errors(niriss = True, nirspec = True):
 
     return wave2, snr2
 
-def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_data", seed=42):
+def generate_data(niriss = True, nirspec = True, mirilrs = False, savetag = "w43b_exopie_data", seed=42):
     """
     """
 
     # Load Kevin's SNR files
-    x, snr = load_kevins_errors(niriss = niriss, nirspec = nirspec)
+    x, snr = load_kevins_errors(niriss = niriss, nirspec = nirspec, mirilrs = mirilrs)
 
     # Given a datafile, bin to CHIMERA's R=100 grid (This feels DUMB!)
     wnomin = np.floor(np.min(1e4 / x))
