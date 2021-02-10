@@ -441,12 +441,15 @@ def load_kevins_errors(niriss = True, nirspec = True, mirilrs = False):
 
     return wave2, snr2
 
-def generate_data(niriss = True, nirspec = True, mirilrs = False, savetag = "w43b_exopie_data", seed=42):
+def generate_data(niriss = True, nirspec = True, mirilrs = False, Texp = 1.0, savetag = "w43b_exopie_data", seed=42):
     """
     """
 
     # Load Kevin's SNR files
     x, snr = load_kevins_errors(niriss = niriss, nirspec = nirspec, mirilrs = mirilrs)
+
+    # Scale SNR based on exposure time
+    snr = snr * np.sqrt(Texp)
 
     # Given a datafile, bin to CHIMERA's R=100 grid (This feels DUMB!)
     wnomin = np.floor(np.min(1e4 / x))
