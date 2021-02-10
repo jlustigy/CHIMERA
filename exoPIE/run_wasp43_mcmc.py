@@ -497,7 +497,8 @@ def generate_data(niriss = True, nirspec = True, mirilrs = False, Texp = 1.0, sa
              xsecs=XSECS)
     #"""
 
-    # Plot
+    # Plot data
+    """
     fig, axes = plt.subplots(2,1, figsize = (14, 10))
     ax= axes[0]
     ax2 = axes[1]
@@ -532,6 +533,7 @@ def generate_data(niriss = True, nirspec = True, mirilrs = False, Texp = 1.0, sa
     #ax2.set_yscale("log")
 
     fig.savefig(savetag+".png", bbox_inches = "tight")
+    """
 
     return wl, y_binned, y_meas, y_err, XSECS
 
