@@ -75,7 +75,7 @@ exopie.PRIORS = [
 ]
 
 # Get state vector parameter names
-exopie.THETA_NAMES = [prior.theta_name for prior in exopie.RIORS]
+exopie.THETA_NAMES = [prior.theta_name for prior in exopie.PRIORS]
 
 # Get Truth values
 exopie.THETA0 = [prior.theta0 for prior in exopie.PRIORS]
