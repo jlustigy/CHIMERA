@@ -54,6 +54,8 @@ exopie.y_err = y_err
 exopie.XSECS = XSECS
 
 #"""
+THETA_DEFAULTS = exopie.THETA_DEFAULTS
+
 # Define Priors
 exopie.PRIORS = [
     #smarter.priors.GaussianPrior(THETA_DEFAULTS["Teff"], 174.75, theta_name = "Teff", theta0 = THETA_DEFAULTS["Teff"]),
@@ -73,7 +75,7 @@ exopie.PRIORS = [
 ]
 
 # Get state vector parameter names
-exopie.THETA_NAMES = [prior.theta_name for prior in Pexopie.RIORS]
+exopie.THETA_NAMES = [prior.theta_name for prior in exopie.RIORS]
 
 # Get Truth values
 exopie.THETA0 = [prior.theta0 for prior in exopie.PRIORS]
