@@ -236,12 +236,15 @@ def logprob_blobs(theta):
 MAKE FAKE DATA
 """
 
-def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_free_data", seed=42):
+def generate_data(niriss = True, nirspec = True, mirilrs = False, Texp = 1.0, savetag = "w43b_exopie_data", seed=42):
     """
     """
 
     # Load Kevin's SNR files
-    x, snr = load_kevins_errors(niriss = niriss, nirspec = nirspec)
+    x, snr = load_kevins_errors(niriss = niriss, nirspec = nirspec, mirilrs = mirilrs)
+
+    # Scale SNR based on exposure time
+    snr = snr * np.sqrt(Texp)
 
     # Given a datafile, bin to CHIMERA's R=100 grid (This feels DUMB!)
     wnomin = np.floor(np.min(1e4 / x))
@@ -290,6 +293,7 @@ def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_free_dat
     #"""
 
     # Plot
+    """
     fig, axes = plt.subplots(2,1, figsize = (14, 10))
     ax= axes[0]
     ax2 = axes[1]
@@ -324,6 +328,7 @@ def generate_data(niriss = True, nirspec = True, savetag = "w43b_exopie_free_dat
     #ax2.set_yscale("log")
 
     fig.savefig(savetag+".png", bbox_inches = "tight")
+    """
 
     return wl, y_binned, y_meas, y_err, XSECS
 
@@ -331,7 +336,7 @@ def model_wrapper(x, *theta):
     y_binned, y_star, y_planet, atm = run_pie_model_general(theta)
     return y_binned
 
-def run_curve_fit():
+def run_curve_fit(diff_length_scale = 0.1):
     """
     """
 
@@ -343,9 +348,16 @@ def run_curve_fit():
     uppers = [b[1] for b in bounds]
     bounds = (lowers, uppers)
 
+    # Prepare step size for finite difference Jacobians
+    bs = np.array(bounds)
+    # Spacing between bounds
+    delta = (bs[1:,:] - bs[:-1,:])
+    # Use 1/10th of parameter length scale
+    diff_step = diff_length_scale * delta.squeeze()
+
     # Run curve fit
     popt, pcov = sp.optimize.curve_fit(model_wrapper, wl, y_binned, sigma = y_err, p0 = THETA0,
-                                       absolute_sigma = True, bounds = bounds)
+                                       absolute_sigma = True, bounds = bounds, diff_step = diff_step)
 
     # Compute one standard deviation errors on the parameters
     perr = np.sqrt(np.diag(pcov))
