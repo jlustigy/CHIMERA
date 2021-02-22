@@ -27,8 +27,8 @@ GLOBALS
 """
 
 # Define data and xsecs
-unique_tag = "allin1"
-data_tag = "w43b_exopie_free_data_%s" %unique_tag
+unique_tag = "free_allin1"
+data_tag = "w43b_exopie_%s" %unique_tag
 if os.path.exists(data_tag+".npz"):
     print("Loading Synthetic Data and xsecs...")
     data = np.load(data_tag+".npz", allow_pickle=True)
