@@ -27,7 +27,8 @@ GLOBALS
 """
 
 # Define data and xsecs
-tag = "test_free_nirspec1"
+Texp = 4.0
+tag = "test_free_nirspec%i" %Texp
 data_tag = "w43b_exopie_data_%s" %tag
 if os.path.exists(data_tag+".npz"):
     print("Loading Synthetic Data and xsecs...")
@@ -40,7 +41,7 @@ if os.path.exists(data_tag+".npz"):
 else:
     # Make fake dataset
     print("Generating Synthetic Data and xsecs...")
-    wl, y_binned, y_meas, y_err, XSECS = exopie.generate_data(savetag = data_tag, niriss = False, nirspec = True, mirilrs = False, Texp=1.0)
+    wl, y_binned, y_meas, y_err, XSECS = exopie.generate_data(savetag = data_tag, niriss = False, nirspec = True, mirilrs = False, Texp=Texp)
 
 use_random_noise = False
 if use_random_noise:
@@ -58,7 +59,7 @@ exopie.XSECS = XSECS
 if __name__ == "__main__":
 
     nsteps = 5000
-    ncpu = multiprocessing.cpu_count()
+    ncpu = 25#multiprocessing.cpu_count()
     nwalkers = 10*len(exopie.THETA0)
 
     # Run OE retrieval to initialize MCMC walker near posterior well
