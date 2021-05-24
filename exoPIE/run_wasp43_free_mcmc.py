@@ -236,7 +236,30 @@ def logprob_blobs(theta):
 MAKE FAKE DATA
 """
 
-def generate_data(niriss = True, nirspec = True, mirilrs = False, Texp = 1.0, savetag = "w43b_exopie_data", seed=42):
+def load_zodi(Nez = 1):
+    """
+    """
+
+    # Path to Zodi File
+    path = os.path.join(HERE, 'exozodi/WASP-43.dat')
+
+    # Open and parse disk data
+    disk = pd.read_csv(path, delim_whitespace=True, names=['lambda', 'Jy', 'Jy3', 'Jy100', 'frat', 'frat3', 'frat100'])
+    lam_disk = disk['lambda'].values
+    flux_disk_jy = disk["Jy"].values
+
+    # Caste as pysn array for conversion
+    foo = pysynphot.ArraySpectrum(wave=lam_disk, flux=flux_disk_jy, waveunits='micron', fluxunits="jy")
+    foo.convert("flam")
+    flux_disk = (foo.flux * u.erg/u.s/u.cm/u.cm/u.AA).to(u.W/u.m/u.m/u.m)
+
+    # Scale Zodi by user factor
+    flux_disk = Nez * flux_disk
+
+    return lam_disk, flux_disk
+
+def generate_data(niriss = True, nirspec = True, mirilrs = False, Texp = 1.0, savetag = "w43b_exopie_data", seed=42,
+                  Nez = None):
     """
     """
 
@@ -268,6 +291,15 @@ def generate_data(niriss = True, nirspec = True, mirilrs = False, Texp = 1.0, sa
 
     # Run model with default inputs
     Fobs, Fstar_earth, Fplan_therm_earth, atm = run_pie_model_general(THETA0)
+
+    # Add ExoZodi if requested
+    if Nez is not None:
+        # Loadi the Zodi
+        lam_disk, flux_disk = load_zodi(Nez = Nez)
+        # Interpolate disk onto star and planet flux grid
+        Fdisk = sp.interpolate.interp1d(lam_disk, flux_disk)(wl)
+        # Add to observed flux
+        Fobs = Fobs + Fdisk
 
     # Rebin data to CHIMERA grid
     y_meas_binned, y_err_binned = cg.downbin_spec_err(np.ones_like(snr), 1.0/snr, x, wl[::-1], dlam=dwl[::-1])

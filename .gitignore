@@ -17,6 +17,7 @@ __pycache__/*
 
 exoPIE/*.npz
 exoPIE/*/*
+!exoPIE/exozodi/*
 exoPIE/*.png
 exoPIE/*.log
 exoPIE/*.pkl
