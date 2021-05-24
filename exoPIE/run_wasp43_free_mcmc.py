@@ -240,6 +240,8 @@ def load_zodi(Nez = 1):
     """
     """
 
+    import pandas as pd
+
     # Path to Zodi File
     path = os.path.join(HERE, 'exozodi/WASP-43.dat')
 
