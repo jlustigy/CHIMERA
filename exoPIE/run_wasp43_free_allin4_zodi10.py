@@ -27,7 +27,7 @@ GLOBALS
 """
 
 # Define data and xsecs
-tag = "test_free_allin4_zodi3"
+tag = "test_free_allin4_zodi10"
 data_tag = "w43b_exopie_data_%s" %tag
 if os.path.exists(data_tag+".npz"):
     print("Loading Synthetic Data and xsecs...")
@@ -41,7 +41,7 @@ else:
     # Make fake dataset
     print("Generating Synthetic Data and xsecs...")
     wl, y_binned, y_meas, y_err, XSECS = exopie.generate_data(savetag = data_tag, niriss = True, nirspec = True, mirilrs = True,
-                                                              Texp=4.0, Nez=3.0)
+                                                              Texp=4.0, Nez=10.0)
 
 use_random_noise = False
 if use_random_noise:
