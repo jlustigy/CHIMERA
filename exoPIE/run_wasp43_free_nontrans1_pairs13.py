@@ -27,7 +27,7 @@ GLOBALS
 """
 
 # Define data and xsecs
-tag = "test_free_nontrans1_pairs12"
+tag = "test_free_nontrans1_pairs13"
 data_tag = "w43b_exopie_data_%s" %tag
 if os.path.exists(data_tag+".npz"):
     print("Loading Synthetic Data and xsecs...")
